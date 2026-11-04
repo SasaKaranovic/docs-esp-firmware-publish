@@ -20,13 +20,16 @@ inputs:
       stable | preview | dev. Default: tags/releases -> stable, default branch -> preview, other branches -> dev.
     default: ""
   version:
-    description: Default: tag name without a leading "v", otherwise YYYY.MM.DD-<short sha>.
+    description: >-
+      Default: tag name without a leading "v", otherwise YYYY.MM.DD-<short sha>.
     default: ""
   notes:
-    description: Default: the GitHub release body, otherwise the head commit message.
+    description: >-
+      Default: the GitHub release body, otherwise the head commit message.
     default: ""
   date:
-    description: ISO 8601 build date. Default: now.
+    description: >-
+      ISO 8601 build date. Default: now.
     default: ""
   replace:
     description: Overwrite a build with the same id (same variant and version). Default false.
