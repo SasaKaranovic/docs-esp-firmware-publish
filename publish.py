@@ -180,7 +180,13 @@ def parse_builds(lines):
             raise PublishError(f"build '{line}' must look like variant=path/to/firmware.bin")
         variant, path = (s.strip() for s in line.split("=", 1))
         if not os.path.isfile(path):
-            raise PublishError(f"firmware file not found: {path}")
+            found = []
+            for root, dirs, files in os.walk("."):
+                dirs[:] = [d for d in dirs if d not in (".git", "node_modules")]
+                found += [os.path.join(root, f)[2:] for f in files if f.endswith(".bin")]
+            hint = ("\n.bin files in " + os.getcwd() + ":\n  " + "\n  ".join(sorted(found)[:30])) if found \
+                else f"\nNo .bin files at all under {os.getcwd()} (was the artifact downloaded?)"
+            raise PublishError(f"firmware file not found: {path}{hint}")
         builds.append((variant, path))
     if not builds:
         raise PublishError("no builds given")
