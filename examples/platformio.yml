@@ -1,0 +1,84 @@
+# Example: PlatformIO project with two firmware variants.
+# Copy to .github/workflows/firmware.yml in the product repo, then adjust:
+#   - the matrix (PlatformIO environment -> firmware variant from firmware.yml)
+#   - CHIP, the product key, and the concurrency group name
+name: Firmware
+
+on:
+  push:
+    branches: [main, dev]   # main -> preview, other branches -> dev (hidden unless ?dev)
+    tags: ["v*"]            # tags -> stable
+  workflow_dispatch:
+
+# One publish at a time per product, across all workflows and branches in this repo.
+concurrency:
+  group: firmware-publish-openfan-micro
+  cancel-in-progress: false
+
+env:
+  CHIP: esp32c3
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - env: openfan_micro
+            variant: standard
+          - env: openfan_micro_unraid
+            variant: unraid
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO and esptool
+        run: pip install platformio esptool
+
+      - name: Build
+        run: pio run -e ${{ matrix.env }}
+
+      # Merge bootloader, partition table, boot_app0 and app into one image flashed at 0x0.
+      # The offsets come from PlatformIO itself, so they are right for every chip/framework.
+      - name: Merge into a single image
+        env:
+          PIO_ENV: ${{ matrix.env }}
+        run: |
+          pio project metadata -e "$PIO_ENV" --json-output > metadata.json
+          python - <<'PY'
+          import json, os, subprocess
+          env = os.environ["PIO_ENV"]
+          extra = json.load(open("metadata.json"))[env]["extra"]
+          args = []
+          for image in extra.get("flash_images", []):
+              args += [image["offset"], image["path"]]
+          args += [extra.get("application_offset", "0x10000"), f".pio/build/{env}/firmware.bin"]
+          cmd = ["python", "-m", "esptool", "--chip", os.environ["CHIP"], "merge_bin", "-o", "merged.bin", *args]
+          print(" ".join(cmd))
+          subprocess.check_call(cmd)
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fw-${{ matrix.variant }}
+          path: merged.bin
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      # Downloads every artifact into its own folder: fw-standard/merged.bin, fw-unraid/merged.bin
+      - uses: actions/download-artifact@v8
+
+      - uses: SasaKaranovic/docs-esp-firmware-publish@v1
+        with:
+          product: openfan-micro
+          builds: |
+            standard=fw-standard/merged.bin
+            unraid=fw-unraid/merged.bin
+          host: ${{ secrets.FIRMWARE_DEPLOY_HOST }}
+          ssh-key: ${{ secrets.FIRMWARE_DEPLOY_KEY }}
+          known-hosts: ${{ secrets.FIRMWARE_KNOWN_HOSTS }}

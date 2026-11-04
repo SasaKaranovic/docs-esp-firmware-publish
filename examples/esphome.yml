@@ -1,0 +1,40 @@
+# Example: ESPHome configuration. ESPHome's firmware.factory.bin is already a merged image.
+# Copy to .github/workflows/firmware.yml in the product repo, then adjust the YAML file name,
+# product key, variant and concurrency group. The product must exist in firmware.yml first.
+name: Firmware
+
+on:
+  push:
+    branches: [main]        # main -> preview
+    tags: ["v*"]            # tags -> stable
+  workflow_dispatch:
+
+concurrency:
+  group: firmware-publish-opensense
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Compile
+        run: |
+          esphome compile opensense.yaml
+          cp "$(find .esphome/build -name firmware.factory.bin | head -n 1)" merged.bin
+
+      - uses: SasaKaranovic/docs-esp-firmware-publish@v1
+        with:
+          product: opensense
+          builds: standard=merged.bin
+          host: ${{ secrets.FIRMWARE_DEPLOY_HOST }}
+          ssh-key: ${{ secrets.FIRMWARE_DEPLOY_KEY }}
+          known-hosts: ${{ secrets.FIRMWARE_KNOWN_HOSTS }}

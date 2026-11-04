@@ -1,0 +1,39 @@
+# Example: ESP-IDF project.
+# Copy to .github/workflows/firmware.yml in the product repo, then adjust the IDF version,
+# target, product key, variant and concurrency group name.
+name: Firmware
+
+on:
+  push:
+    branches: [main]        # main -> preview
+    tags: ["v*"]            # tags -> stable
+  workflow_dispatch:
+
+concurrency:
+  group: firmware-publish-drybox
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # Builds in Espressif's ESP-IDF container, then merges bootloader, partition table and
+      # app into one image using the offsets ESP-IDF wrote to build/flash_args.
+      - name: Build and merge
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3
+          target: esp32c3
+          command: idf.py build && cd build && python -m esptool --chip esp32c3 merge_bin -o merged.bin @flash_args
+
+      - uses: SasaKaranovic/docs-esp-firmware-publish@v1
+        with:
+          product: drybox
+          builds: standard=build/merged.bin
+          host: ${{ secrets.FIRMWARE_DEPLOY_HOST }}
+          ssh-key: ${{ secrets.FIRMWARE_DEPLOY_KEY }}
+          known-hosts: ${{ secrets.FIRMWARE_KNOWN_HOSTS }}

@@ -1,0 +1,50 @@
+# Example: Arduino sketches built with arduino-cli.
+# The ESP32 Arduino core 3.x writes a ready-to-flash <sketch>.ino.merged.bin.
+# Copy to .github/workflows/firmware.yml in the product repo, then adjust the matrix
+# (sketch folder -> firmware variant), the board (FQBN), product key and concurrency group.
+name: Firmware
+
+on:
+  push:
+    branches: [main]        # main -> preview
+    tags: ["v*"]            # tags -> stable
+  workflow_dispatch:
+
+concurrency:
+  group: firmware-publish-winfidel
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    strategy:
+      max-parallel: 1       # the variants publish one after another into the same builds.json
+      matrix:
+        include:
+          - sketch: firmware/production
+            variant: production
+          - sketch: firmware/polarity
+            variant: polarity
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install the ESP32 core
+        run: |
+          arduino-cli config init --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Compile
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 --output-dir out "${{ matrix.sketch }}"
+          cp out/*.merged.bin merged.bin
+
+      - uses: SasaKaranovic/docs-esp-firmware-publish@v1
+        with:
+          product: winfidel
+          builds: ${{ matrix.variant }}=merged.bin
+          host: ${{ secrets.FIRMWARE_DEPLOY_HOST }}
+          ssh-key: ${{ secrets.FIRMWARE_DEPLOY_KEY }}
+          known-hosts: ${{ secrets.FIRMWARE_KNOWN_HOSTS }}

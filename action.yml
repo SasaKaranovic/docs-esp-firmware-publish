@@ -1,0 +1,128 @@
+name: Publish ESP firmware to docs.sasakaranovic.com
+description: >-
+  Uploads merged ESP32 firmware images to the docs.sasakaranovic.com web flasher
+  and adds them to the product's builds.json.
+author: Sasa Karanovic
+
+inputs:
+  product:
+    description: Product key from firmware.yml (e.g. openfan-micro). Must match the server key's folder.
+    required: true
+  builds:
+    description: |
+      One build per line: <variant>=<path to merged firmware .bin>
+      e.g.
+        standard=build/standard/firmware.bin
+        unraid=build/unraid/firmware.bin
+    required: true
+  channel:
+    description: stable | preview | dev. Default: tags/releases -> stable, default branch -> preview, other branches -> dev.
+    default: ""
+  version:
+    description: Default: tag name without a leading "v", otherwise YYYY.MM.DD-<short sha>.
+    default: ""
+  notes:
+    description: Default: the GitHub release body, otherwise the head commit message.
+    default: ""
+  date:
+    description: ISO 8601 build date. Default: now.
+    default: ""
+  replace:
+    description: Overwrite a build with the same id (same variant and version). Default false.
+    default: "false"
+  erase:
+    description: Ask the user to erase the device before installing. Default false.
+    default: "false"
+  record-source:
+    description: Record repository, commit and workflow run in builds.json. Default true.
+    default: "true"
+  host:
+    description: SSH host of the web server (not the Cloudflare-proxied hostname).
+    required: true
+  port:
+    description: SSH port.
+    default: "22"
+  user:
+    description: SSH user.
+    default: docs-firmware
+  remote-path:
+    description: >-
+      Path inside the key's allowed folder. Leave empty for per-product keys (the key is
+      locked to /firmware/<product>/). Use "<product>/" with an admin key locked to /firmware/.
+    default: ""
+  ssh-key:
+    description: Private SSH key (store it as a secret).
+    required: true
+  known-hosts:
+    description: known_hosts line(s) for the server (store as a secret or variable). Required.
+    required: true
+  base-url:
+    description: Docs site URL, used for links in the run summary.
+    default: https://docs.sasakaranovic.com
+  dry-run:
+    description: Validate and print the upload commands without uploading. Default false.
+    default: "false"
+
+outputs:
+  build-ids:
+    description: Comma-separated ids of the published builds.
+    value: ${{ steps.publish.outputs.build-ids }}
+  version:
+    description: Published version.
+    value: ${{ steps.publish.outputs.version }}
+  channel:
+    description: Published channel.
+    value: ${{ steps.publish.outputs.channel }}
+  flasher-url:
+    description: URL of the product's flasher page.
+    value: ${{ steps.publish.outputs.flasher-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        IN_PRODUCT: ${{ inputs.product }}
+        IN_BUILDS: ${{ inputs.builds }}
+        IN_CHANNEL: ${{ inputs.channel }}
+        IN_VERSION: ${{ inputs.version }}
+        IN_NOTES: ${{ inputs.notes }}
+        IN_DATE: ${{ inputs.date }}
+        IN_REPLACE: ${{ inputs.replace }}
+        IN_ERASE: ${{ inputs.erase }}
+        IN_SOURCE: ${{ inputs.record-source }}
+        IN_HOST: ${{ inputs.host }}
+        IN_PORT: ${{ inputs.port }}
+        IN_USER: ${{ inputs.user }}
+        IN_PATH: ${{ inputs.remote-path }}
+        IN_KEY: ${{ inputs.ssh-key }}
+        IN_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        IN_BASE_URL: ${{ inputs.base-url }}
+        IN_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -euo pipefail
+        key="$RUNNER_TEMP/fw_publish_key"
+        kh="$RUNNER_TEMP/fw_publish_known_hosts"
+        trap 'rm -f "$key" "$kh"' EXIT
+        umask 077
+        printf '%s\n' "$IN_KEY" > "$key"
+        printf '%s\n' "$IN_KNOWN_HOSTS" > "$kh"
+
+        args=(--product "$IN_PRODUCT" --build "$IN_BUILDS"
+              --base-url "$IN_BASE_URL" --target "$IN_USER@$IN_HOST:$IN_PATH"
+              --port "$IN_PORT" --ssh-key "$key" --known-hosts "$kh")
+        [ -n "$IN_CHANNEL" ] && args+=(--channel "$IN_CHANNEL")
+        [ -n "$IN_VERSION" ] && args+=(--version "$IN_VERSION")
+        [ -n "$IN_NOTES" ]   && args+=(--notes "$IN_NOTES")
+        [ -n "$IN_DATE" ]    && args+=(--date "$IN_DATE")
+        [ "$IN_REPLACE" = "true" ] && args+=(--replace)
+        [ "$IN_ERASE" = "true" ]   && args+=(--erase)
+        [ "$IN_SOURCE" = "false" ] && args+=(--no-source)
+        [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
+
+        python3 "$GITHUB_ACTION_PATH/publish.py" "${args[@]}"
+
+branding:
+  icon: upload-cloud
+  color: blue
