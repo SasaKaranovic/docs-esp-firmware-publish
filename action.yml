@@ -16,7 +16,8 @@ inputs:
         unraid=build/unraid/firmware.bin
     required: true
   channel:
-    description: stable | preview | dev. Default: tags/releases -> stable, default branch -> preview, other branches -> dev.
+    description: >-
+      stable | preview | dev. Default: tags/releases -> stable, default branch -> preview, other branches -> dev.
     default: ""
   version:
     description: Default: tag name without a leading "v", otherwise YYYY.MM.DD-<short sha>.
